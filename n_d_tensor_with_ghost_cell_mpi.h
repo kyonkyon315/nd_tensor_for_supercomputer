@@ -36,6 +36,16 @@ public:
         return s;
     }();
 
+    static_assert(
+        []()constexpr{
+            for(int i=0;i<N_dim;++i){
+                if(L_ghost_lengths[i]!=R_ghost_lengths[i])return false;
+            }
+            return true;
+        }(),
+        "ghost cell size in L and R mismutch."
+    );
+
 private:
     static constexpr Index total_size = []() constexpr {
         Index prod = 1;
@@ -64,6 +74,37 @@ private:
         return ret_val;
     }();
 
+    template<size_t Depth>
+    static constexpr void calc_buf_size(Index& buf_size,Index d_start, Index d_end, Index current_dim_idx) {
+        if constexpr (Depth == N_dim) {
+        } else {
+            Index start = 0; 
+            Index end = local_shape[Depth]; 
+
+            if (Depth == current_dim_idx) {
+                start = d_start;
+                end = d_end;
+            }
+            buf_size*=(end-start);
+            calc_buf_size<Depth + 1>(buf_size, d_start, d_end, current_dim_idx);
+        }
+    }
+
+    static constexpr Index buf_size = []()constexpr{
+        Index ans=0;
+        for(Index d = 0;d<N_dim;++d){
+            Index buf_size_in_one_dim = 1;
+            calc_buf_size<0>(
+                buf_size_in_one_dim,
+                local_shape[d] - R_ghost_lengths[d], 
+                local_shape[d], 
+                d
+            );
+            ans+=buf_size_in_one_dim;
+        }
+        return ans;
+    }();
+
     // MPI Members
     MPI_Comm comm_cart;
     int my_rank;
@@ -73,6 +114,8 @@ private:
 public:
     NdTensorWithGhostCell(MPI_Comm comm, const std::array<int, N_dim>& procs_per_dim) {
         data.resize(total_size, T{0});
+        recv_buf.resize(buf_size,T{0});
+        send_buf.resize(buf_size,T{0});
         setup_mpi(comm, procs_per_dim);
     }
     
@@ -186,8 +229,8 @@ public:
 
     // --- Sync Ghosts ---
     void sync_ghosts() {
-        if(send_buf.size() < total_size) send_buf.resize(total_size);
-        if(recv_buf.size() < total_size) recv_buf.resize(total_size);
+        //if(send_buf.size() < total_size) send_buf.resize(total_size);
+        //if(recv_buf.size() < total_size) recv_buf.resize(total_size);
 
         for (int d = 0; d < N_dim; ++d) {
             int left_rank = neighbors[d][0];
