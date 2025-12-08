@@ -43,7 +43,7 @@ public:
             }
             return true;
         }(),
-        "ghost cell size in L and R mismutch."
+        "ghost cell size in L and R mismatch."
     );
 
 private:
